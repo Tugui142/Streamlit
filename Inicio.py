@@ -32,37 +32,28 @@ uploaded_file = st.file_uploader("Seleccione un archivo CSV", type=["csv"])
 
 if uploaded_file is not None:
     try:
-        # Intento de lectura robusta: intenta con el encabezado en la primera fila (0) y luego con el encabezado por defecto
+        # Intento de lectura robusta: intenta con la lectura estándar
         try:
             df = pd.read_csv(uploaded_file, header=0) 
         except:
+            # Intento con codificación latin-1 si falla
             df = pd.read_csv(uploaded_file, encoding="latin-1", header=0)
 
         st.success("Archivo cargado correctamente.")
 
         # ==========================================================
-        # 📌 CORRECCIÓN: Renombrar columnas para el archivo cargado
+        # 📌 Renombrar columnas para el archivo cargado
         # ==========================================================
         
-        # Mapeo ampliado para manejar diferentes nombres de exportación
+        # Mapeo ampliado para manejar diferentes nombres de exportación de Grafana/InfluxDB
         rename_map = {
             # Posibles nombres para el tiempo
-            "Time": "_time",
-            "time": "_time", 
-            "timeStamp": "_time", 
-            "result_time": "_time", # A veces lo agrega InfluxDB
+            "Time": "_time", "time": "_time", "timeStamp": "_time", "result_time": "_time", 
             
-            # Posibles nombres para las variables
-            "humidity ESP32": "humidity",
-            "humidity": "humidity",
-            "temperature": "temperature",
-            "temperature ESP32": "temperature", 
-            "valve_state": "valve_state",
-            "valve_state ESP32": "valve_state",
-            # Si se usa una agregación como 'mean()' en Grafana
-            "mean_temperature": "temperature",
-            "mean_humidity": "humidity",
-            "last_valve_state": "valve_state"
+            # Nombres de las variables con o sin el sufijo ' ESP32' o prefijo de agregación
+            "humidity ESP32": "humidity", "temperature ESP32": "temperature", "valve_state ESP32": "valve_state",
+            "humidity": "humidity", "temperature": "temperature", "valve_state": "valve_state",
+            "mean_temperature": "temperature", "mean_humidity": "humidity", "last_valve_state": "valve_state"
         }
         
         # Solo crea un diccionario de mapeo para las columnas que realmente existen en el DataFrame
@@ -77,11 +68,20 @@ if uploaded_file is not None:
         # ==========================================================
         required_columns = ["_time", "temperature", "humidity", "valve_state"]
         
-        # --- Importante: Asegurar que la columna '_time' existe antes de intentar procesarla ---
+        # 1. Asegurar la columna de tiempo y convertirla
         if "_time" not in df.columns:
-            st.error("❌ La columna de tiempo ('_time', 'Time', etc.) no se pudo identificar. Verifique el formato del CSV.")
+            st.error("❌ La columna de tiempo ('_time', 'Time', etc.) no se pudo identificar. Deteniendo la ejecución.")
             st.stop()
             
+        df["_time"] = pd.to_datetime(df["_time"])
+        df = df.set_index("_time")
+        
+        # 2. Conversión a tipos numéricos para las columnas que existen
+        for col in ["temperature", "humidity", "valve_state"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce') # Convierte errores a NaN
+
+        # 3. Rellenar columnas faltantes (lo que ocurre con tu CSV actual)
         missing_columns = [col for col in required_columns if col not in df.columns]
 
         if missing_columns:
@@ -90,35 +90,24 @@ if uploaded_file is not None:
             Se crearán con **valores por defecto** para permitir la visualización.
             """)
             
-            # Manejo de columnas faltantes (si solo falta Temp o Valve, usa valores de la otra columna)
             if "temperature" in missing_columns:
-                # Usar la media de humedad como valor por defecto (o un valor fijo si humedad tampoco está)
-                temp_default = df["humidity"].mean() if "humidity" in df.columns else 25.0
+                temp_default = df["humidity"].mean() if "humidity" in df.columns and not df["humidity"].empty else 25.0
                 df["temperature"] = temp_default
-                st.info(f"Columna 'temperature' creada con valor por defecto ({df['temperature'].iloc[0]:.1f}°C)")
+                st.info(f"Columna 'temperature' creada con valor por defecto ({df['temperature'].iloc[0]:.1f}°C). Gráfica: Plana.")
+            
             if "valve_state" in missing_columns:
                 df["valve_state"] = 0
-                st.info("Columna 'valve_state' creada con valor por defecto (0 = Cerrada)")
-            if "humidity" in missing_columns:
-                hum_default = df["temperature"].mean() if "temperature" in df.columns else 50.0
-                df["humidity"] = hum_default
-                st.info(f"Columna 'humidity' creada con valor por defecto ({df['humidity'].iloc[0]:.1f}%)")
-        
-        # Si aún faltan columnas cruciales, detener
-        if not all(col in df.columns for col in required_columns):
-            st.error("Error grave: No se pudieron establecer las columnas esenciales. Deteniendo la ejecución.")
-            st.stop()
+                st.info("Columna 'valve_state' creada con valor por defecto (0 = Cerrada). Gráfica: Constante en 0.")
             
-        st.write("Columnas usadas en el análisis:", list(df.columns))
+            if "humidity" in missing_columns:
+                df["humidity"] = 50.0
+                st.info(f"Columna 'humidity' creada con valor por defecto (50.0%). Gráfica: Plana.")
 
-        # Procesar el tiempo
-        df["_time"] = pd.to_datetime(df["_time"])
-        df = df.set_index("_time")
-        
-        # Convertir a tipos numéricos (necesario si la lectura fue ambigua)
-        df["temperature"] = pd.to_numeric(df["temperature"], errors='coerce')
-        df["humidity"] = pd.to_numeric(df["humidity"], errors='coerce')
-        df["valve_state"] = pd.to_numeric(df["valve_state"], errors='coerce').astype('int', errors='ignore')
+        # Asegurar que la válvula sea entera (0 o 1)
+        if "valve_state" in df.columns:
+            df["valve_state"] = df["valve_state"].fillna(0).astype(int, errors='ignore')
+
+        st.write("Columnas usadas en el análisis:", list(df.columns))
 
         # Tabs
         tab1, tab2, tab3, tab4 = st.tabs([
@@ -158,36 +147,26 @@ if uploaded_file is not None:
             st.subheader("🔍 Filtrar datos por variable")
             variable = st.selectbox("Seleccione una variable", ["temperature", "humidity", "valve_state"])
             
-            # Filtrar NaN antes de calcular min/max para evitar errores en float()
             valid_data = df[variable].dropna()
             
             if valid_data.empty:
-                st.warning(f"La columna '{variable}' no contiene datos numéricos válidos.")
-                rango = (0.0, 1.0)
+                st.warning(f"La columna '{variable}' no contiene datos numéricos válidos. Usando rango [0, 1].")
+                min_val, max_val = 0.0, 1.0
             else:
                 min_val = float(valid_data.min())
                 max_val = float(valid_data.max())
                 
-                # --- CORRECCIÓN para evitar que min_val == max_val en el slider ---
+                # Manejo de slider cuando min_val == max_val
                 if min_val == max_val:
-                    st.warning(f"La columna '{variable}' tiene un solo valor. Se ajustó el rango del slider.")
-                    
                     if variable == "valve_state":
-                        # Forzamos el rango a [0, 1] si solo hay ceros o unos
-                        if max_val == 0.0:
-                             min_val = -0.1
-                             max_val = 1.1
-                        elif max_val == 1.0:
-                            min_val = 0.0
-                            max_val = 1.1
+                         min_val = -0.1
+                         max_val = 1.1
                     else:
-                        # Caso general: añadir una pequeña tolerancia
                         epsilon = 0.1 
                         min_val = max_val - epsilon
                         max_val = max_val + epsilon
-                # --- FIN DE CORRECCIÓN ---
 
-                rango = st.slider("Rango de valores", min_val, max_val, (min_val, max_val))
+            rango = st.slider("Rango de valores", min_val, max_val, (min_val, max_val))
                 
             filtrado = df[(df[variable] >= rango[0]) & (df[variable] <= rango[1])].dropna(subset=[variable])
             st.write(f"### Datos filtrados ({variable})")
@@ -216,10 +195,6 @@ if uploaded_file is not None:
 
     except Exception as e:
         st.error(f"Error al procesar el archivo: {str(e)}")
-        # Para depuración, muestra la primera fila del archivo crudo si es posible
-        uploaded_file.seek(0)
-        st.text("Primeras líneas del archivo para diagnóstico:")
-        st.text(uploaded_file.read(500).decode('latin-1'))
 
 else:
     st.info("Por favor cargue un archivo CSV para comenzar.")

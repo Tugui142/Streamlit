@@ -4,27 +4,27 @@ from datetime import datetime
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Sistema IoT de Riego Hidropónico",
+    page_title="Sistema IoT de Riego Hidropónico - Vita Eterna SAS",
     page_icon="💧",
     layout="wide"
 )
 
 # Encabezado
-st.title("💧 Sistema IoT de Monitoreo y Riego Hidropónico")
+st.title("💧 Sistema IoT de Monitoreo y Riego Hidropónico — Vita Eterna SAS")
 st.markdown("""
-Este sistema permite analizar datos capturados por un ESP32 en un cultivo hidropónico,
+Este sistema permite analizar datos capturados por un ESP32 en el cultivo hidropónico de **Vita Eterna SAS**,
 incluyendo **temperatura**, **humedad** y **estado de la válvula de riego**.
 Los datos provienen de *InfluxDB → Grafana → CSV*.
 """)
 
-# Ubicación del sensor
-eafit_location = pd.DataFrame({
-    'lat': [6.2006],
-    'lon': [-75.5783]
+# Ubicación del sensor (Vita Eterna SAS)
+vitaeterna_location = pd.DataFrame({
+    'lat': [6.2108673],
+    'lon': [-75.5709709]
 })
 
-st.subheader("📍 Ubicación del sistema (simulado)")
-st.map(eafit_location, zoom=15)
+st.subheader("📍 Ubicación del sistema en Vita Eterna SAS")
+st.map(vitaeterna_location, zoom=18)
 
 # Cargador de archivo
 st.subheader("📂 Cargar archivo CSV exportado de Grafana o InfluxDB")
@@ -40,21 +40,44 @@ if uploaded_file is not None:
 
         st.success("Archivo cargado correctamente.")
 
-        # Mostrar columnas cargadas
-        st.write("Columnas detectadas:", list(df.columns))
+        # ==========================================================
+        # 📌 Renombrar columnas para el archivo cargado
+        # ==========================================================
+        rename_map = {
+            "Time": "_time",
+            "humidity ESP32": "humidity"
+        }
+        
+        columns_to_rename = {k: v for k, v in rename_map.items() if k in df.columns}
+        
+        if columns_to_rename:
+            df = df.rename(columns=columns_to_rename)
+            st.info(f"Columnas renombradas: {columns_to_rename}")
 
-        # Validación de columnas
+        # ==========================================================
+        # 📌 Validación y manejo de columnas faltantes
+        # ==========================================================
         required_columns = ["_time", "temperature", "humidity", "valve_state"]
+        missing_columns = [col for col in required_columns if col not in df.columns]
 
-        if not all(col in df.columns for col in required_columns):
-            st.error("""
-            El archivo no contiene todas las columnas necesarias:
-            - _time
-            - temperature
-            - humidity
-            - valve_state
+        if missing_columns:
+            st.warning(f"""
+            El archivo no contiene todas las columnas necesarias: {', '.join(missing_columns)}.
+            Se crearán con **valores por defecto** para permitir la visualización.
             """)
-            st.stop()
+            
+            if "temperature" in missing_columns:
+                df["temperature"] = df["humidity"].mean() if "humidity" in df.columns else 25.0
+                st.info(f"Columna 'temperature' creada con valor por defecto ({df['temperature'].iloc[0]:.1f}°C)")
+            if "valve_state" in missing_columns:
+                df["valve_state"] = 0
+                st.info("Columna 'valve_state' creada con valor por defecto (0 = Cerrada)")
+        
+        if not all(col in df.columns for col in required_columns):
+             st.error("Error grave: No se pudieron establecer las columnas esenciales. Deteniendo la ejecución.")
+             st.stop()
+             
+        st.write("Columnas usadas en el análisis:", list(df.columns))
 
         # Procesar el tiempo
         df["_time"] = pd.to_datetime(df["_time"])
@@ -73,12 +96,9 @@ if uploaded_file is not None:
         # -------------------------------
         with tab1:
             st.subheader("📈 Comportamiento de las Variables en el Tiempo")
-
             st.line_chart(df[["temperature", "humidity"]])
-
             st.subheader("🚿 Estado de la válvula (0 = cerrado, 1 = abierto)")
             st.area_chart(df["valve_state"])
-
             if st.checkbox("Mostrar datos crudos"):
                 st.dataframe(df)
 
@@ -87,13 +107,10 @@ if uploaded_file is not None:
         # -------------------------------
         with tab2:
             st.subheader("📊 Estadísticas descriptivas")
-
             col1, col2, col3 = st.columns(3)
-
             col1.metric("🌡️ Temp Promedio (°C)", f"{df['temperature'].mean():.2f}")
             col2.metric("💧 Humedad Promedio (%)", f"{df['humidity'].mean():.2f}")
             col3.metric("🚿 % Riego Activo", f"{df['valve_state'].mean()*100:.1f}%")
-
             st.write("### Estadísticos completos")
             st.dataframe(df.describe())
 
@@ -102,39 +119,20 @@ if uploaded_file is not None:
         # -------------------------------
         with tab3:
             st.subheader("🔍 Filtrar datos por variable")
-
-            variable = st.selectbox(
-                "Seleccione una variable",
-                ["temperature", "humidity", "valve_state"]
-            )
-
+            variable = st.selectbox("Seleccione una variable", ["temperature", "humidity", "valve_state"])
             min_val = float(df[variable].min())
             max_val = float(df[variable].max())
-
-            rango = st.slider(
-                "Rango de valores",
-                min_val, max_val,
-                (min_val, max_val)
-            )
-
+            rango = st.slider("Rango de valores", min_val, max_val, (min_val, max_val))
             filtrado = df[(df[variable] >= rango[0]) & (df[variable] <= rango[1])]
-
             st.write(f"### Datos filtrados ({variable})")
             st.dataframe(filtrado)
-
-            st.download_button(
-                "Descargar CSV filtrado",
-                filtrado.to_csv().encode("utf-8"),
-                "filtrado.csv",
-                "text/csv"
-            )
+            st.download_button("Descargar CSV filtrado", filtrado.to_csv().encode("utf-8"), "filtrado.csv", "text/csv")
 
         # -------------------------------
         # TAB 4 — INFORMACIÓN DEL SISTEMA
         # -------------------------------
         with tab4:
             st.subheader("🛠️ Información del sistema IoT")
-
             st.write("""
             **Microcontrolador:** ESP32  
             **Sensores:** DHT22 (Temperatura/Humedad)  
@@ -143,10 +141,9 @@ if uploaded_file is not None:
             **Visualización:** Grafana → Exportado a CSV  
             **Analítica:** Streamlit  
             """)
-
             st.write("### Objetivo del sistema")
             st.write("""
-            - Controlar automáticamente el riego de un cultivo hidropónico.  
+            - Controlar automáticamente el riego de un cultivo hidropónico en Vita Eterna SAS.  
             - Registrar variables ambientales para analizar el comportamiento del sistema.  
             - Detectar patrones y anticipar fallas.  
             """)
@@ -161,5 +158,5 @@ else:
 # Footer
 st.markdown("""
 ---
-💧 *Sistema IoT de Riego Hidropónico — Universidad EAFIT*
+💧 *Sistema IoT de Riego Hidropónico — Vita Eterna SAS*
 """)

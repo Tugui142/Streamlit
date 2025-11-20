@@ -4,27 +4,27 @@ from datetime import datetime
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Sistema IoT de Riego Hidropónico",
+    page_title="Sistema IoT de Riego Hidropónico - Vita Eterna SAS",
     page_icon="💧",
     layout="wide"
 )
 
 # Encabezado
-st.title("💧 Sistema IoT de Monitoreo y Riego Hidropónico")
+st.title("💧 Sistema IoT de Monitoreo y Riego Hidropónico — Vita Eterna SAS")
 st.markdown("""
-Este sistema permite analizar datos capturados por un ESP32 en un cultivo hidropónico,
+Este sistema permite analizar datos capturados por un ESP32 en el cultivo hidropónico de **Vita Eterna SAS**,
 incluyendo **temperatura**, **humedad** y **estado de la válvula de riego**.
 Los datos provienen de *InfluxDB → Grafana → CSV*.
 """)
 
-# Ubicación del sensor
-eafit_location = pd.DataFrame({
-    'lat': [6.2006],
-    'lon': [-75.5783]
+# Ubicación del sensor (Vita Eterna SAS)
+vitaeterna_location = pd.DataFrame({
+    'lat': [6.2108673],
+    'lon': [-75.5709709]
 })
 
-st.subheader("📍 Ubicación del sistema (simulado)")
-st.map(eafit_location, zoom=15)
+st.subheader("📍 Ubicación del sistema en Vita Eterna SAS")
+st.map(vitaeterna_location, zoom=18)
 
 # Cargador de archivo
 st.subheader("📂 Cargar archivo CSV exportado de Grafana o InfluxDB")
@@ -116,7 +116,7 @@ if uploaded_file is not None:
             st.dataframe(df.describe())
 
         # -------------------------------
-        # TAB 3 — FILTROS (CORRECCIÓN APLICADA AQUÍ)
+        # TAB 3 — FILTROS (CÓDIGO CORREGIDO PARA EL SLIDER)
         # -------------------------------
         with tab3:
             st.subheader("🔍 Filtrar datos por variable")
@@ -125,13 +125,20 @@ if uploaded_file is not None:
             min_val = float(df[variable].min())
             max_val = float(df[variable].max())
             
-            # --- CORRECCIÓN para evitar que min_val == max_val ---
-            # Si la columna tiene un solo valor (como las columnas por defecto), 
-            # el slider fallará. Ajustamos max_val ligeramente.
+            # --- CORRECCIÓN para evitar que min_val == max_val en el slider ---
             if min_val == max_val:
-                epsilon = 1e-9 # Un valor muy pequeño
-                max_val = max_val + epsilon
                 st.warning(f"La columna '{variable}' tiene un solo valor. Se ajustó el rango del slider.")
+                
+                # Caso especial para la válvula (valores 0 o 1)
+                if variable == "valve_state":
+                    # Forzamos el rango a [0, 1] si solo hay ceros
+                    max_val = 1.0 
+                    min_val = 0.0
+                # Caso general: añadir una pequeña tolerancia
+                else:
+                    epsilon = 0.1 # Usamos una tolerancia mayor (0.1) para asegurar la separación
+                    min_val = max_val - epsilon
+                    max_val = max_val + epsilon
             # --- FIN DE CORRECCIÓN ---
 
             rango = st.slider("Rango de valores", min_val, max_val, (min_val, max_val))
@@ -156,7 +163,7 @@ if uploaded_file is not None:
             """)
             st.write("### Objetivo del sistema")
             st.write("""
-            - Controlar automáticamente el riego de un cultivo hidropónico.  
+            - Controlar automáticamente el riego de un cultivo hidropónico en Vita Eterna SAS.  
             - Registrar variables ambientales para analizar el comportamiento del sistema.  
             - Detectar patrones y anticipar fallas.  
             """)

@@ -263,8 +263,8 @@ if uploaded_file is not None:
                 st.write("- 🏠 Ubicación: Medellín - El Poblado")
                 
                 st.write("### 🧑‍🔬 Responsables")
-                st.write("- Ingeniero a Cargo: Sofía Bermúdez")
-                st.write("- Técnico de Mantenimiento: Juan Pérez")
+                st.write("- Ingeniero a Cargo: Juan Pablo Gutiérrez")
+                st.write("- Técnico de Mantenimiento: También Juan Pablo")
             
             with col2:
                 st.write("### 💧 Especificaciones Técnicas")

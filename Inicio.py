@@ -4,27 +4,27 @@ from datetime import datetime
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Sistema IoT de Riego Hidropónico - Vita Eterna SAS",
+    page_title="Sistema IoT de Riego Hidropónico",
     page_icon="💧",
     layout="wide"
 )
 
 # Encabezado
-st.title("💧 Sistema IoT de Monitoreo y Riego Hidropónico — Vita Eterna SAS")
+st.title("💧 Sistema IoT de Monitoreo y Riego Hidropónico")
 st.markdown("""
-Este sistema permite analizar datos capturados por un ESP32 en el cultivo hidropónico de **Vita Eterna SAS**,
+Este sistema permite analizar datos capturados por un ESP32 en un cultivo hidropónico,
 incluyendo **temperatura**, **humedad** y **estado de la válvula de riego**.
 Los datos provienen de *InfluxDB → Grafana → CSV*.
 """)
 
-# Ubicación del sensor (Vita Eterna SAS)
-vitaeterna_location = pd.DataFrame({
-    'lat': [6.2108673],
-    'lon': [-75.5709709]
+# Ubicación del sensor
+eafit_location = pd.DataFrame({
+    'lat': [6.2006],
+    'lon': [-75.5783]
 })
 
-st.subheader("📍 Ubicación del sistema en Vita Eterna SAS")
-st.map(vitaeterna_location, zoom=18)
+st.subheader("📍 Ubicación del sistema (simulado)")
+st.map(eafit_location, zoom=15)
 
 # Cargador de archivo
 st.subheader("📂 Cargar archivo CSV exportado de Grafana o InfluxDB")
@@ -67,6 +67,7 @@ if uploaded_file is not None:
             """)
             
             if "temperature" in missing_columns:
+                # Usar la media de humedad como valor por defecto para temperatura
                 df["temperature"] = df["humidity"].mean() if "humidity" in df.columns else 25.0
                 st.info(f"Columna 'temperature' creada con valor por defecto ({df['temperature'].iloc[0]:.1f}°C)")
             if "valve_state" in missing_columns:
@@ -115,14 +116,26 @@ if uploaded_file is not None:
             st.dataframe(df.describe())
 
         # -------------------------------
-        # TAB 3 — FILTROS
+        # TAB 3 — FILTROS (CORRECCIÓN APLICADA AQUÍ)
         # -------------------------------
         with tab3:
             st.subheader("🔍 Filtrar datos por variable")
             variable = st.selectbox("Seleccione una variable", ["temperature", "humidity", "valve_state"])
+            
             min_val = float(df[variable].min())
             max_val = float(df[variable].max())
+            
+            # --- CORRECCIÓN para evitar que min_val == max_val ---
+            # Si la columna tiene un solo valor (como las columnas por defecto), 
+            # el slider fallará. Ajustamos max_val ligeramente.
+            if min_val == max_val:
+                epsilon = 1e-9 # Un valor muy pequeño
+                max_val = max_val + epsilon
+                st.warning(f"La columna '{variable}' tiene un solo valor. Se ajustó el rango del slider.")
+            # --- FIN DE CORRECCIÓN ---
+
             rango = st.slider("Rango de valores", min_val, max_val, (min_val, max_val))
+            
             filtrado = df[(df[variable] >= rango[0]) & (df[variable] <= rango[1])]
             st.write(f"### Datos filtrados ({variable})")
             st.dataframe(filtrado)
@@ -143,7 +156,7 @@ if uploaded_file is not None:
             """)
             st.write("### Objetivo del sistema")
             st.write("""
-            - Controlar automáticamente el riego de un cultivo hidropónico en Vita Eterna SAS.  
+            - Controlar automáticamente el riego de un cultivo hidropónico.  
             - Registrar variables ambientales para analizar el comportamiento del sistema.  
             - Detectar patrones y anticipar fallas.  
             """)
